@@ -55,7 +55,31 @@ struct ServerProfile: Codable, Equatable, Identifiable {
     var requires2FA = false
     var authType = AuthType.password
     var customHeaders: [CustomHeader] = []
+    var allowInsecureTLS = false
     var createdAt = Date()
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, baseURL, username, password, apiKey, sessionToken, requires2FA
+        case authType, customHeaders, allowInsecureTLS, createdAt
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "My Komari"
+        baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL) ?? "https://"
+        username = try container.decodeIfPresent(String.self, forKey: .username) ?? ""
+        password = try container.decodeIfPresent(String.self, forKey: .password) ?? ""
+        apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
+        sessionToken = try container.decodeIfPresent(String.self, forKey: .sessionToken) ?? ""
+        requires2FA = try container.decodeIfPresent(Bool.self, forKey: .requires2FA) ?? false
+        authType = try container.decodeIfPresent(AuthType.self, forKey: .authType) ?? .password
+        customHeaders = try container.decodeIfPresent([CustomHeader].self, forKey: .customHeaders) ?? []
+        allowInsecureTLS = try container.decodeIfPresent(Bool.self, forKey: .allowInsecureTLS) ?? false
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+    }
 
     var normalizedBaseURL: String {
         baseURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmedTrailingSlash()

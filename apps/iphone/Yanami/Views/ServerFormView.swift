@@ -22,6 +22,12 @@ struct ServerFormView: View {
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
+                    Toggle("Allow insecure TLS", isOn: $draft.allowInsecureTLS)
+                    if draft.allowInsecureTLS {
+                        Text("Use only for self-signed or private certificates you trust.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("Authentication") {

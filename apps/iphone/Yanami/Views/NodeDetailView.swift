@@ -635,6 +635,7 @@ final class SshTerminalViewModel: ObservableObject {
     private let server: ServerProfile
     private let token: String
     private var urlSession: URLSession?
+    private var urlSessionDelegate: URLSessionDelegate?
     private var webSocketTask: URLSessionWebSocketTask?
     private var heartbeatTimer: Timer?
     private var didSendInitialDirectory = false
@@ -677,7 +678,15 @@ final class SshTerminalViewModel: ObservableObject {
         }
         request.setValue(buildOrigin(), forHTTPHeaderField: "Origin")
         
-        let session = URLSession(configuration: .default)
+        let session: URLSession
+        if server.allowInsecureTLS {
+            let delegate = KomariInsecureTLSDelegate(allowedHost: url.host)
+            urlSessionDelegate = delegate
+            session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        } else {
+            urlSessionDelegate = nil
+            session = URLSession(configuration: .default)
+        }
         urlSession = session
         let task = session.webSocketTask(with: request)
         webSocketTask = task
@@ -856,6 +865,7 @@ final class SshTerminalViewModel: ObservableObject {
         webSocketTask = nil
         urlSession?.invalidateAndCancel()
         urlSession = nil
+        urlSessionDelegate = nil
         didSendInitialDirectory = false
     }
 }

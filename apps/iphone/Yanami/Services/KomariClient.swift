@@ -24,7 +24,7 @@ struct KomariClient {
         }
 
         let request = try makeRequest(path: "/api/login", method: "POST", jsonBody: body)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw KomariClientError.invalidResponse
         }
@@ -106,7 +106,7 @@ struct KomariClient {
         let uuid = try normalizedUUID(uuid)
         let encodedUuid = uuid.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? uuid
         let request = try makeRequest(path: "/api/recent/\(encodedUuid)", method: "GET", token: token)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw KomariClientError.invalidResponse
         }
@@ -125,7 +125,7 @@ struct KomariClient {
 
     func getClients(token: String) async throws -> [ManagedClient] {
         let request = try makeRequest(path: "/api/admin/client/list", method: "GET", token: token)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await data(for: request)
         try validateAdminResponse(data: data, response: response, path: "/api/admin/client/list")
         return try decodeAdminPayload([ManagedClient].self, from: data)
     }
@@ -133,14 +133,14 @@ struct KomariClient {
     func deleteClient(token: String, uuid: String) async throws {
         let uuid = try normalizedUUID(uuid)
         let request = try makeRequest(path: "/api/admin/client/\(uuid)/remove", method: "POST", token: token)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await data(for: request)
         try validateAdminResponse(data: data, response: response, path: "/api/admin/client/\(uuid)/remove")
     }
     
     func getClientToken(token: String, uuid: String) async throws -> String {
         let uuid = try normalizedUUID(uuid)
         let request = try makeRequest(path: "/api/admin/client/\(uuid)/token", method: "GET", token: token)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await data(for: request)
         try validateAdminResponse(data: data, response: response, path: "/api/admin/client/\(uuid)/token")
         let payload = try decodeAdminPayload([String: String].self, from: data)
         return payload["token"] ?? ""
@@ -150,14 +150,14 @@ struct KomariClient {
 
     func getPingTasks(token: String) async throws -> [AdminPingTask] {
         let request = try makeRequest(path: "/api/admin/ping/", method: "GET", token: token)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await data(for: request)
         try validateAdminResponse(data: data, response: response, path: "/api/admin/ping/")
         return try decodeAdminPayload([AdminPingTask].self, from: data)
     }
 
     func deletePingTask(token: String, ids: [Int]) async throws {
         let request = try makeRequest(path: "/api/admin/ping/delete", method: "POST", jsonBody: ["id": ids], token: token)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await data(for: request)
         try validateAdminResponse(data: data, response: response, path: "/api/admin/ping/delete")
     }
     
@@ -297,7 +297,7 @@ struct KomariClient {
             body["params"] = params
         }
         let request = try makeRequest(path: "/api/rpc2", method: "POST", jsonBody: body, token: token)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw KomariClientError.invalidResponse
         }
@@ -354,6 +354,16 @@ struct KomariClient {
         return request
     }
 
+    private func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        guard profile.allowInsecureTLS else {
+            return try await URLSession.shared.data(for: request)
+        }
+        let delegate = KomariInsecureTLSDelegate(allowedHost: request.url?.host)
+        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        defer { session.finishTasksAndInvalidate() }
+        return try await session.data(for: request)
+    }
+
     private func normalizedUUID(_ uuid: String) throws -> String {
         let cleaned = uuid.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else {
@@ -384,6 +394,33 @@ struct KomariClient {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return decoder
     }()
+}
+
+final class KomariInsecureTLSDelegate: NSObject, URLSessionDelegate {
+    private let allowedHost: String?
+
+    init(allowedHost: String?) {
+        self.allowedHost = allowedHost?.lowercased()
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let serverTrust = challenge.protectionSpace.serverTrust,
+              isAllowedHost(challenge.protectionSpace.host) else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        completionHandler(.useCredential, URLCredential(trust: serverTrust))
+    }
+
+    private func isAllowedHost(_ host: String) -> Bool {
+        guard let allowedHost else { return false }
+        return host.lowercased() == allowedHost
+    }
 }
 
 enum KomariClientError: LocalizedError {
